@@ -35,6 +35,33 @@ class ApiFlowTest extends TestCase
             ]);
     }
 
+    public function test_admin_can_create_another_user_with_a_role(): void
+    {
+        $admin = User::factory()->create([
+            'name' => 'Admin User',
+            'email' => 'admin-creator@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'admin',
+        ]);
+
+        $response = $this->actingAs($admin, 'api')->postJson('/api/users', [
+            'name' => 'Assistant User',
+            'email' => 'assistant-2@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'role' => 'assistant',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('user.role', 'assistant')
+            ->assertJsonPath('user.email', 'assistant-2@example.com');
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'assistant-2@example.com',
+            'role' => 'assistant',
+        ]);
+    }
+
     public function test_assistant_can_manage_customers_and_sales(): void
     {
         $assistant = User::factory()->create([
@@ -76,6 +103,23 @@ class ApiFlowTest extends TestCase
         $saleResponse->assertStatus(201)
             ->assertJsonPath('data.customer_id', $customer->id)
             ->assertJsonPath('data.total_amount', 3000);
+    }
+
+    public function test_sanctum_bearer_token_authentication_works_without_recursion(): void
+    {
+        $user = User::factory()->create([
+            'name' => 'Bearer User',
+            'email' => 'bearer@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'assistant',
+        ]);
+
+        $token = $user->createToken('api-token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)->getJson('/api/me');
+
+        $response->assertOk()
+            ->assertJsonPath('user.email', 'bearer@example.com');
     }
 
     public function test_admin_only_dashboard_is_restricted_for_assistants(): void
